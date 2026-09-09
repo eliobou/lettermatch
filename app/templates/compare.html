@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ c.user_a }} × {{ c.user_b }} · LetterMatch{% endblock %}
+
+{% macro starbar(rating) %}
+  {% set s = rating | stars %}
+  {% if s.text == '—' %}
+    <span class="stars none" title="not rated">·</span>
+  {% else %}
+  <span class="stars" title="{{ s.text }} / 5">
+    {% for _ in range(s.full) %}<span class="star full">★</span>{% endfor %}
+    {% if s.half %}<span class="star half">★</span>{% endif %}
+    {% for _ in range(s.empty) %}<span class="star">★</span>{% endfor %}
+  </span>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<section class="results">
+  <div class="results-head">
+    <div class="col-film">
+      <span class="shared-count">{{ c.shared }} shared film{{ '' if c.shared == 1 else 's' }}</span>
+    </div>
+    <div class="col-user">
+      <a href="https://letterboxd.com/{{ c.user_a }}/" target="_blank" rel="noopener">{{ c.user_a }}</a>
+      <span class="sub">{{ c.total_a }} logged · {{ c.synced_a | ago }}</span>
+    </div>
+    <div class="col-user">
+      <a href="https://letterboxd.com/{{ c.user_b }}/" target="_blank" rel="noopener">{{ c.user_b }}</a>
+      <span class="sub">{{ c.total_b }} logged · {{ c.synced_b | ago }}</span>
+    </div>
+  </div>
+
+  {% if not c.rows %}
+    <p class="empty">No films in common — or one of the profiles is private.</p>
+  {% endif %}
+
+  <ol class="film-list">
+    {% for row in c.rows %}
+    <li class="film-row{% if row.gap is not none and row.gap >= 3 %} disagree{% endif %}">
+      <div class="col-film">
+        <a class="poster" href="https://letterboxd.com/film/{{ row.slug }}/" target="_blank" rel="noopener">
+          <img loading="lazy" src="/poster/{{ row.slug }}" alt="" width="70" height="105">
+        </a>
+        <div class="film-meta">
+          <span class="film-title">{{ row.name }}</span>
+          {% if row.year %}<span class="film-year">{{ row.year }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="col-user">{{ starbar(row.rating_a) }}</div>
+      <div class="col-user">{{ starbar(row.rating_b) }}</div>
+    </li>
+    {% endfor %}
+  </ol>
+
+  <div class="results-foot">
+    <a href="/compare?a={{ c.user_a }}&b={{ c.user_b }}&refresh=1" class="refresh">↻ Force refresh both profiles</a>
+    <a href="/">← New comparison</a>
+  </div>
+</section>
+{% endblock %}

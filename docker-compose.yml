@@ -1,0 +1,18 @@
+services:
+  lettermatch:
+    build: .
+    image: lettermatch
+    ports:
+      - "8000:8000"
+    volumes:
+      - lettermatch-data:/data
+    environment:
+      # Cache lifetime for a scraped profile, in seconds (default 24h).
+      LETTERMATCH_USER_TTL: "86400"
+      # Optional: set a TMDB v3 API key to use TMDB posters instead of the
+      # Letterboxd image proxy. Leave empty to use Letterboxd.
+      TMDB_API_KEY: ""
+    restart: unless-stopped
+
+volumes:
+  lettermatch-data:

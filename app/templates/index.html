@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <h1>Compare two Letterboxd diaries</h1>
+  <p class="lede">
+    Enter two usernames. LetterMatch lists every film <em>both</em> people have
+    logged, side by side, with the rating each of them gave it.
+  </p>
+
+  {% if error %}<p class="alert">{{ error }}</p>{% endif %}
+
+  <form class="compare-form" action="/compare" method="get">
+    <div class="field">
+      <label for="a">First username</label>
+      <input id="a" name="a" autocomplete="off" spellcheck="false"
+             placeholder="e.g. davidehrlich" required>
+    </div>
+    <div class="vs">×</div>
+    <div class="field">
+      <label for="b">Second username</label>
+      <input id="b" name="b" autocomplete="off" spellcheck="false"
+             placeholder="e.g. karsten" required>
+    </div>
+    <button type="submit">Compare</button>
+  </form>
+
+  <p class="fineprint">
+    First run for a profile can take a while (one page fetched per ~72 films).
+    Results are cached, so the next comparison is instant.
+  </p>
+</section>
+{% endblock %}

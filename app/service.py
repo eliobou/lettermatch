@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass
 
@@ -57,8 +58,11 @@ async def sync_user(username: str, force: bool = False) -> tuple[dict[str, int |
 
 
 async def compare(user_a: str, user_b: str, force: bool = False) -> Comparison:
-    films_a, synced_a = await sync_user(user_a, force)
-    films_b, synced_b = await sync_user(user_b, force)
+    # Both users are synced concurrently; the process-wide request gate in
+    # letterboxd.py keeps the total rate the same as doing them one after another.
+    (films_a, synced_a), (films_b, synced_b) = await asyncio.gather(
+        sync_user(user_a, force), sync_user(user_b, force)
+    )
 
     shared_slugs = sorted(set(films_a) & set(films_b))
     meta = cache.get_films(shared_slugs)

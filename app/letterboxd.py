@@ -19,11 +19,26 @@ from dataclasses import dataclass
 import httpx
 from selectolax.parser import HTMLParser
 
-from .config import HTTP_TIMEOUT, PAGE_CONCURRENCY, USER_AGENT
+from .config import (
+    HTTP_TIMEOUT, PAGE_CONCURRENCY, REQUEST_DELAY, SSL_VERIFY, USER_AGENT,
+)
 
 BASE = "https://letterboxd.com"
 _NAME_YEAR = re.compile(r"^(.*?)\s*\((\d{4})\)\s*$")
 _RATED = re.compile(r"rated-(\d+)")
+
+# One global gate for every outbound letterboxd.com request in the process, so
+# comparing two users in parallel does NOT raise the total request rate — it
+# just interleaves their pages under the same ceiling.
+_GATE = asyncio.Semaphore(PAGE_CONCURRENCY)
+
+
+async def _get(client: httpx.AsyncClient, url: str, **kw) -> httpx.Response:
+    async with _GATE:
+        r = await client.get(url, **kw)
+        if REQUEST_DELAY:
+            await asyncio.sleep(REQUEST_DELAY)
+        return r
 
 
 class ProfileNotFound(Exception):
@@ -43,6 +58,7 @@ def _client() -> httpx.AsyncClient:
         headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
         timeout=HTTP_TIMEOUT,
         follow_redirects=True,
+        verify=SSL_VERIFY,
     )
 
 
@@ -87,7 +103,7 @@ async def scrape_user_films(username: str) -> list[ScrapedFilm]:
     """Return every film on the user's public profile. Raises ProfileNotFound."""
     username = username.strip().lower()
     async with _client() as client:
-        first = await client.get(f"{BASE}/{username}/films/page/1/")
+        first = await _get(client, f"{BASE}/{username}/films/page/1/")
         if first.status_code == 404:
             raise ProfileNotFound(username)
         first.raise_for_status()
@@ -96,13 +112,10 @@ async def scrape_user_films(username: str) -> list[ScrapedFilm]:
         last = _last_page(first.text)
 
         if last > 1:
-            sem = asyncio.Semaphore(PAGE_CONCURRENCY)
-
             async def fetch(page: int) -> list[ScrapedFilm]:
-                async with sem:
-                    r = await client.get(f"{BASE}/{username}/films/page/{page}/")
-                    r.raise_for_status()
-                    return _parse_page(r.text)
+                r = await _get(client, f"{BASE}/{username}/films/page/{page}/")
+                r.raise_for_status()
+                return _parse_page(r.text)
 
             results = await asyncio.gather(*(fetch(p) for p in range(2, last + 1)))
             for chunk in results:
@@ -128,7 +141,7 @@ async def resolve_poster_url(slug: str) -> str | None:
     social-card crop, not a true poster, but it hotlinks without a referer check.
     """
     async with _client() as client:
-        r = await client.get(f"{BASE}/film/{slug}/")
+        r = await _get(client, f"{BASE}/film/{slug}/")
         if r.status_code != 200:
             return None
         m = _OG_IMAGE.search(r.text)

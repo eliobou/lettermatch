@@ -48,9 +48,33 @@ uvicorn app.main:app --reload
 | `TMDB_API_KEY` | *(empty)* | Enable TMDB posters |
 | `LETTERMATCH_USER_TTL` | `86400` | Cache lifetime per profile, seconds |
 | `LETTERMATCH_DB` | `data/lettermatch.db` | SQLite path |
-| `LETTERMATCH_PAGE_CONCURRENCY` | `5` | Parallel page fetches when scraping |
+| `LETTERMATCH_PAGE_CONCURRENCY` | `4` | Process-wide ceiling on concurrent requests to letterboxd.com |
+| `LETTERMATCH_REQUEST_DELAY` | `0` | Optional fixed pause (seconds) after each request |
+| `LETTERMATCH_SSL_VERIFY` | `true` | See "Corporate proxy" below |
+
+Both profiles of a comparison are scraped concurrently, but every request passes
+through one shared gate, so raising/lowering `PAGE_CONCURRENCY` is the only knob
+that changes the actual rate Letterboxd sees.
 
 Use `?refresh=1` on a comparison URL (or the "Force refresh" link) to bypass the cache.
+
+## Corporate proxy / TLS inspection
+
+If the build fails with `CERTIFICATE_VERIFY_FAILED`, or comparisons return **502**
+inside Docker, your network injects a self-signed root CA that the container
+doesn't trust.
+
+- The `Dockerfile` already passes `--trusted-host` to pip so the **build** works.
+- For **runtime** requests to letterboxd.com / TMDB, either:
+  - **Proper fix** — mount the CA and point Python at it:
+    ```yaml
+    volumes:
+      - ./corp-ca.pem:/etc/ssl/certs/corp-ca.pem:ro
+    environment:
+      SSL_CERT_FILE: /etc/ssl/certs/corp-ca.pem
+    ```
+  - **Quick fix** — set `LETTERMATCH_SSL_VERIFY=false` (skips cert validation on
+    outbound requests only).
 
 ## Notes
 

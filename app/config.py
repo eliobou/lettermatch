@@ -12,8 +12,14 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY", "").strip()
 
 # Politeness knobs for scraping letterboxd.com.
 HTTP_TIMEOUT = float(os.getenv("LETTERMATCH_HTTP_TIMEOUT", "20"))
-PAGE_CONCURRENCY = int(os.getenv("LETTERMATCH_PAGE_CONCURRENCY", "5"))
-POSTER_CONCURRENCY = int(os.getenv("LETTERMATCH_POSTER_CONCURRENCY", "8"))
+
+# TLS verification for outbound requests. Set to "false" only if you are behind a
+# TLS-inspecting proxy and cannot mount its root CA (see SSL_CERT_FILE in README).
+SSL_VERIFY = os.getenv("LETTERMATCH_SSL_VERIFY", "true").lower() not in {"false", "0", "no"}
+# Process-wide ceiling on concurrent requests to letterboxd.com (shared across
+# both users of a comparison) and an optional fixed pause after each request.
+PAGE_CONCURRENCY = int(os.getenv("LETTERMATCH_PAGE_CONCURRENCY", "4"))
+REQUEST_DELAY = float(os.getenv("LETTERMATCH_REQUEST_DELAY", "0"))
 
 USER_AGENT = os.getenv(
     "LETTERMATCH_USER_AGENT",

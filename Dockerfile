@@ -7,7 +7,13 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# --trusted-host keeps the build working behind a TLS-inspecting corporate proxy
+# whose root CA the base image doesn't ship. Drop these flags if you don't need them.
+RUN pip install --no-cache-dir --disable-pip-version-check \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org \
+    --trusted-host pypi.python.org \
+    -r requirements.txt
 
 COPY app ./app
 

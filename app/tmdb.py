@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import httpx
 
-from .config import HTTP_TIMEOUT, TMDB_API_KEY, USER_AGENT
+from .config import HTTP_TIMEOUT, SSL_VERIFY, TMDB_API_KEY, USER_AGENT
 
 _SEARCH = "https://api.themoviedb.org/3/search/movie"
 _IMG_BASE = "https://image.tmdb.org/t/p/w342"
@@ -20,7 +20,8 @@ async def resolve_poster_url(name: str, year: int | None) -> str | None:
     if year:
         params["year"] = str(year)
     async with httpx.AsyncClient(
-        headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT, follow_redirects=True
+        headers={"User-Agent": USER_AGENT}, timeout=HTTP_TIMEOUT,
+        follow_redirects=True, verify=SSL_VERIFY,
     ) as client:
         r = await client.get(_SEARCH, params=params)
         if r.status_code != 200:

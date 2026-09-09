@@ -30,3 +30,8 @@ USER_AGENT = os.getenv(
 # Browser profile curl_cffi impersonates to get past Cloudflare on letterboxd.com.
 # Try "chrome124", "chrome131", "safari17_2", etc. if the default is challenged.
 IMPERSONATE = os.getenv("LETTERMATCH_IMPERSONATE", "chrome")
+
+# File logging. Written next to the SQLite DB (e.g. data/lettermatch.log), rotated.
+LOG_DIR = os.path.dirname(DB_PATH) or "."
+LOG_PATH = os.path.join(LOG_DIR, "lettermatch.log")
+LOG_LEVEL = os.getenv("LETTERMATCH_LOG_LEVEL", "INFO").upper()

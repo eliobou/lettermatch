@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
@@ -9,11 +10,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import cache, tmdb
+from . import cache, logs, tmdb
 from .config import TMDB_API_KEY
 from .letterboxd import LetterboxdBlocked, ProfileNotFound, resolve_poster_url
 from .service import compare
 
+_log = logging.getLogger("lettermatch")
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -30,6 +32,7 @@ _TRANSPARENT_GIF = bytes.fromhex(
 
 @app.on_event("startup")
 def _startup() -> None:
+    logs.setup_logging()
     cache.init_db()
 
 
@@ -79,12 +82,14 @@ async def compare_view(
     try:
         result = await compare(a, b, force=bool(refresh))
     except ProfileNotFound as e:
+        _log.warning("compare a=%s b=%s: profile not found (%s)", a, b, e)
         return templates.TemplateResponse(
             "index.html",
             {"request": request, "error": f"Letterboxd profile not found: “{e}”"},
             status_code=404,
         )
     except (httpx.HTTPError, LetterboxdBlocked) as e:
+        _log.warning("compare a=%s b=%s: failed (%s: %s)", a, b, type(e).__name__, e)
         return templates.TemplateResponse(
             "index.html",
             {"request": request,

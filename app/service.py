@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 
 from . import cache
 from .config import USER_TTL
 from .letterboxd import scrape_user_films
+
+_log = logging.getLogger("lettermatch")
 
 
 @dataclass
@@ -85,17 +88,28 @@ async def sync_user(username: str, force: bool = False) -> tuple[dict[str, int |
     fresh = meta and (time.time() - meta["synced_at"] < USER_TTL)
 
     if fresh and not force:
-        return cache.get_user_films(username), meta["synced_at"]
+        films = cache.get_user_films(username)
+        age_min = int((time.time() - meta["synced_at"]) / 60)
+        _log.info("sync %s: CACHE hit (%d films, %dm old)", username, len(films), age_min)
+        return films, meta["synced_at"]
 
+    reason = "forced refresh" if force else ("stale" if meta else "never synced")
+    t0 = time.time()
     scraped = await scrape_user_films(username)
     films = {f.slug: f.rating for f in scraped}
     cache.replace_user_films(username, films)
     for f in scraped:
         cache.upsert_film(f.slug, f.name, f.year, None)
+    _log.info("sync %s: SCRAPED %d films in %.1fs (%s)",
+              username, len(films), time.time() - t0, reason)
     return films, time.time()
 
 
 async def compare(user_a: str, user_b: str, force: bool = False) -> Comparison:
+    user_a, user_b = user_a.strip().lower(), user_b.strip().lower()
+    _log.info("compare a=%s b=%s force=%s", user_a, user_b, force)
+    t0 = time.time()
+
     # Both users are synced concurrently; the process-wide request gate in
     # letterboxd.py keeps the total rate the same as doing them one after another.
     (films_a, synced_a), (films_b, synced_b) = await asyncio.gather(
@@ -117,13 +131,17 @@ async def compare(user_a: str, user_b: str, force: bool = False) -> Comparison:
         ))
     rows.sort(key=lambda r: (r.name.lower(), r.year or 0))
 
+    stats = _build_stats(rows, films_a, films_b)
+    _log.info("compare a=%s b=%s -> %d shared, %d compared, done in %.1fs",
+              user_a, user_b, len(rows), stats.compared, time.time() - t0)
+
     return Comparison(
-        user_a=user_a.strip().lower(),
-        user_b=user_b.strip().lower(),
+        user_a=user_a,
+        user_b=user_b,
         rows=rows,
         total_a=len(films_a),
         total_b=len(films_b),
         synced_a=synced_a,
         synced_b=synced_b,
-        stats=_build_stats(rows, films_a, films_b),
+        stats=stats,
     )

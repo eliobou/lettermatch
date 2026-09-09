@@ -37,7 +37,15 @@ docker compose up --build
 # http://localhost:8000
 ```
 
-The SQLite cache lives in the `lettermatch-data` volume.
+The SQLite cache and a rotated log file (`lettermatch.log`) live in the
+`lettermatch-data` volume (next to the DB). The log keeps `/` and `/compare`
+hits — dropping health checks, posters and static files — and adds one line per
+comparison saying, per user, whether the film list was a **CACHE hit** or freshly
+**SCRAPED**:
+
+```
+docker compose exec lettermatch tail -f /data/lettermatch.log
+```
 
 ## Run locally
 
@@ -57,6 +65,7 @@ uvicorn app.main:app --reload
 | `LETTERMATCH_PAGE_CONCURRENCY` | `4` | Process-wide ceiling on concurrent requests to letterboxd.com |
 | `LETTERMATCH_REQUEST_DELAY` | `0` | Optional fixed pause (seconds) after each request |
 | `LETTERMATCH_IMPERSONATE` | `chrome` | Browser fingerprint `curl_cffi` uses to pass Cloudflare (`chrome131`, `safari17_2`, …) |
+| `LETTERMATCH_LOG_LEVEL` | `INFO` | Level for the file log |
 | `LETTERMATCH_SSL_VERIFY` | `true` | See "Corporate proxy" below |
 
 Both profiles of a comparison are scraped concurrently, but every request passes

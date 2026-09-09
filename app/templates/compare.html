@@ -33,6 +33,42 @@
     <p class="empty">No films in common — or one of the profiles is private.</p>
   {% endif %}
 
+  {% set st = c.stats %}
+  {% if st.compared %}
+  <div class="stats">
+    <div class="stat-avgs">
+      <div class="stat">
+        <span class="stat-num">{{ '%.2f'|format(st.avg_shared_a) }}</span>
+        <span class="stat-lbl">{{ c.user_a }} · avg on shared</span>
+        <span class="stat-sub">all rated: {{ '%.2f'|format(st.avg_all_a) if st.avg_all_a is not none else '—' }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num">{{ '%.2f'|format(st.avg_gap) }}</span>
+        <span class="stat-lbl">avg gap</span>
+        <span class="stat-sub">{{ st.compared }} films compared</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num">{{ '%.2f'|format(st.avg_shared_b) }}</span>
+        <span class="stat-lbl">{{ c.user_b }} · avg on shared</span>
+        <span class="stat-sub">all rated: {{ '%.2f'|format(st.avg_all_b) if st.avg_all_b is not none else '—' }}</span>
+      </div>
+    </div>
+
+    <div class="stat-bar" role="img"
+         aria-label="{{ c.user_a }} rated higher on {{ st.better_a }}, equal on {{ st.equal }}, {{ c.user_b }} rated higher on {{ st.better_b }}">
+      <span class="seg seg-a" style="flex: {{ st.better_a }}"></span>
+      <span class="seg seg-eq" style="flex: {{ st.equal }}"></span>
+      <span class="seg seg-b" style="flex: {{ st.better_b }}"></span>
+    </div>
+    <div class="stat-legend">
+      <span><i class="dot dot-a"></i>{{ c.user_a }} higher · {{ st.better_a }}</span>
+      <span><i class="dot dot-eq"></i>same · {{ st.equal }}</span>
+      <span><i class="dot dot-b"></i>{{ c.user_b }} higher · {{ st.better_b }}</span>
+      {% if st.not_compared %}<span class="muted">{{ st.not_compared }} not comparable (rated by one only)</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <ol class="film-list">
     {% for row in c.rows %}
     {% if row.rating_a is not none and row.rating_b is not none %}

@@ -27,6 +27,20 @@ class Row:
 
 
 @dataclass
+class Stats:
+    compared: int          # shared films where BOTH gave a numeric rating
+    not_compared: int      # shared films where at least one didn't rate
+    better_a: int          # films A rated higher than B
+    better_b: int
+    equal: int
+    avg_shared_a: float | None   # A's mean rating (stars) over `compared` films
+    avg_shared_b: float | None
+    avg_all_a: float | None      # A's mean rating over ALL A's rated films
+    avg_all_b: float | None
+    avg_gap: float | None        # mean |A - B| over `compared` films, in stars
+
+
+@dataclass
 class Comparison:
     user_a: str
     user_b: str
@@ -35,10 +49,34 @@ class Comparison:
     total_b: int
     synced_a: float
     synced_b: float
+    stats: Stats
 
     @property
     def shared(self) -> int:
         return len(self.rows)
+
+
+def _mean_stars(values: list[int]) -> float | None:
+    return round(sum(values) / len(values) / 2, 2) if values else None
+
+
+def _build_stats(rows: list[Row], films_a: dict[str, int | None],
+                 films_b: dict[str, int | None]) -> Stats:
+    pairs = [(r.rating_a, r.rating_b) for r in rows
+             if r.rating_a is not None and r.rating_b is not None]
+    return Stats(
+        compared=len(pairs),
+        not_compared=len(rows) - len(pairs),
+        better_a=sum(1 for a, b in pairs if a > b),
+        better_b=sum(1 for a, b in pairs if b > a),
+        equal=sum(1 for a, b in pairs if a == b),
+        avg_shared_a=_mean_stars([a for a, _ in pairs]),
+        avg_shared_b=_mean_stars([b for _, b in pairs]),
+        avg_all_a=_mean_stars([r for r in films_a.values() if r is not None]),
+        avg_all_b=_mean_stars([r for r in films_b.values() if r is not None]),
+        avg_gap=(round(sum(abs(a - b) for a, b in pairs) / len(pairs) / 2, 2)
+                 if pairs else None),
+    )
 
 
 async def sync_user(username: str, force: bool = False) -> tuple[dict[str, int | None], float]:
@@ -87,4 +125,5 @@ async def compare(user_a: str, user_b: str, force: bool = False) -> Comparison:
         total_b=len(films_b),
         synced_a=synced_a,
         synced_b=synced_b,
+        stats=_build_stats(rows, films_a, films_b),
     )

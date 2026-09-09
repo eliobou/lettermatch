@@ -24,6 +24,12 @@ Posters:
 Comments/reviews are intentionally **not** fetched (it would mean one request per
 film and risk rate-limiting).
 
+letterboxd.com is behind Cloudflare. Requests use [`curl_cffi`](https://github.com/lexiforest/curl_cffi)
+with a real-browser TLS fingerprint to avoid the "Just a moment..." challenge. If
+comparisons start returning **502 "Cloudflare block"**, try another
+`LETTERMATCH_IMPERSONATE` value; if nothing works from your IP you'd need a
+challenge-solver (e.g. FlareSolverr) in front.
+
 ## Run with Docker
 
 ```bash
@@ -50,6 +56,7 @@ uvicorn app.main:app --reload
 | `LETTERMATCH_DB` | `data/lettermatch.db` | SQLite path |
 | `LETTERMATCH_PAGE_CONCURRENCY` | `4` | Process-wide ceiling on concurrent requests to letterboxd.com |
 | `LETTERMATCH_REQUEST_DELAY` | `0` | Optional fixed pause (seconds) after each request |
+| `LETTERMATCH_IMPERSONATE` | `chrome` | Browser fingerprint `curl_cffi` uses to pass Cloudflare (`chrome131`, `safari17_2`, …) |
 | `LETTERMATCH_SSL_VERIFY` | `true` | See "Corporate proxy" below |
 
 Both profiles of a comparison are scraped concurrently, but every request passes

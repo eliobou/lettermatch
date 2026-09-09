@@ -26,3 +26,7 @@ USER_AGENT = os.getenv(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
 )
+
+# Browser profile curl_cffi impersonates to get past Cloudflare on letterboxd.com.
+# Try "chrome124", "chrome131", "safari17_2", etc. if the default is challenged.
+IMPERSONATE = os.getenv("LETTERMATCH_IMPERSONATE", "chrome")

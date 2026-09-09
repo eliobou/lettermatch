@@ -6,8 +6,9 @@ everything we need in one request per 72 films:
   * film slug, display name and year   (data-item-slug / data-item-name)
   * the user's rating in half-star units 1..10   (span.rating.rated-N)
 
-Poster images are served lazily through our own `/poster/{slug}` proxy, which
-resolves to `https://letterboxd.com/film/{slug}/image-150/`.
+letterboxd.com sits behind Cloudflare, so requests go through `curl_cffi` with a
+real-browser TLS/HTTP fingerprint (`impersonate=`); a plain HTTP client gets the
+"Just a moment..." challenge page instead.
 """
 
 from __future__ import annotations
@@ -16,11 +17,11 @@ import asyncio
 import re
 from dataclasses import dataclass
 
-import httpx
+from curl_cffi.requests import AsyncSession
 from selectolax.parser import HTMLParser
 
 from .config import (
-    HTTP_TIMEOUT, PAGE_CONCURRENCY, REQUEST_DELAY, SSL_VERIFY, USER_AGENT,
+    HTTP_TIMEOUT, IMPERSONATE, PAGE_CONCURRENCY, REQUEST_DELAY, SSL_VERIFY,
 )
 
 BASE = "https://letterboxd.com"
@@ -32,17 +33,20 @@ _RATED = re.compile(r"rated-(\d+)")
 # just interleaves their pages under the same ceiling.
 _GATE = asyncio.Semaphore(PAGE_CONCURRENCY)
 
-
-async def _get(client: httpx.AsyncClient, url: str, **kw) -> httpx.Response:
-    async with _GATE:
-        r = await client.get(url, **kw)
-        if REQUEST_DELAY:
-            await asyncio.sleep(REQUEST_DELAY)
-        return r
+_BROWSER_HEADERS = {
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,"
+              "image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 
 class ProfileNotFound(Exception):
     pass
+
+
+class LetterboxdBlocked(Exception):
+    """Network failure, or a Cloudflare challenge instead of the real page."""
 
 
 @dataclass
@@ -53,13 +57,29 @@ class ScrapedFilm:
     rating: int | None  # half-star units, 1..10
 
 
-def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
+def _session() -> AsyncSession:
+    return AsyncSession(
+        impersonate=IMPERSONATE,
         timeout=HTTP_TIMEOUT,
-        follow_redirects=True,
         verify=SSL_VERIFY,
+        allow_redirects=True,
+        headers=_BROWSER_HEADERS,
     )
+
+
+async def _get(session: AsyncSession, url: str):
+    async with _GATE:
+        try:
+            r = await session.get(url)
+        except Exception as e:  # curl_cffi raises its own error hierarchy
+            raise LetterboxdBlocked(f"request to {url} failed: {e}") from e
+        if REQUEST_DELAY:
+            await asyncio.sleep(REQUEST_DELAY)
+    if r.status_code in (403, 429, 503) and "just a moment" in r.text[:2000].lower():
+        raise LetterboxdBlocked(
+            f"Cloudflare challenge on {url} (HTTP {r.status_code})"
+        )
+    return r
 
 
 def _parse_page(html: str) -> list[ScrapedFilm]:
@@ -100,28 +120,33 @@ def _last_page(html: str) -> int:
 
 
 async def scrape_user_films(username: str) -> list[ScrapedFilm]:
-    """Return every film on the user's public profile. Raises ProfileNotFound."""
+    """Return every film on the user's public profile.
+
+    Raises ProfileNotFound (404) or LetterboxdBlocked (network / Cloudflare).
+    """
     username = username.strip().lower()
-    async with _client() as client:
-        first = await _get(client, f"{BASE}/{username}/films/page/1/")
+    async with _session() as session:
+        first = await _get(session, f"{BASE}/{username}/films/page/1/")
         if first.status_code == 404:
             raise ProfileNotFound(username)
-        first.raise_for_status()
+        if first.status_code >= 400:
+            raise LetterboxdBlocked(f"HTTP {first.status_code} for {username}")
 
         films = _parse_page(first.text)
         last = _last_page(first.text)
 
         if last > 1:
             async def fetch(page: int) -> list[ScrapedFilm]:
-                r = await _get(client, f"{BASE}/{username}/films/page/{page}/")
-                r.raise_for_status()
+                r = await _get(session, f"{BASE}/{username}/films/page/{page}/")
+                if r.status_code >= 400:
+                    raise LetterboxdBlocked(f"HTTP {r.status_code} page {page}")
                 return _parse_page(r.text)
 
             results = await asyncio.gather(*(fetch(p) for p in range(2, last + 1)))
             for chunk in results:
                 films.extend(chunk)
 
-    # De-duplicate by slug, keeping the first (rated) occurrence if any.
+    # De-duplicate by slug, keeping the rated occurrence if any.
     seen: dict[str, ScrapedFilm] = {}
     for f in films:
         if f.slug not in seen or (seen[f.slug].rating is None and f.rating is not None):
@@ -140,9 +165,12 @@ async def resolve_poster_url(slug: str) -> str | None:
     Used only as a fallback when no TMDB key is configured. The image is a
     social-card crop, not a true poster, but it hotlinks without a referer check.
     """
-    async with _client() as client:
-        r = await _get(client, f"{BASE}/film/{slug}/")
-        if r.status_code != 200:
-            return None
-        m = _OG_IMAGE.search(r.text)
-        return m.group(1) if m else None
+    try:
+        async with _session() as session:
+            r = await _get(session, f"{BASE}/film/{slug}/")
+    except LetterboxdBlocked:
+        return None
+    if r.status_code != 200:
+        return None
+    m = _OG_IMAGE.search(r.text)
+    return m.group(1) if m else None

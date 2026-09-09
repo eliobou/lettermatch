@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import cache, tmdb
 from .config import TMDB_API_KEY
-from .letterboxd import ProfileNotFound, resolve_poster_url
+from .letterboxd import LetterboxdBlocked, ProfileNotFound, resolve_poster_url
 from .service import compare
 
 BASE_DIR = Path(__file__).parent
@@ -84,11 +84,12 @@ async def compare_view(
             {"request": request, "error": f"Letterboxd profile not found: “{e}”"},
             status_code=404,
         )
-    except httpx.HTTPError:
+    except (httpx.HTTPError, LetterboxdBlocked) as e:
         return templates.TemplateResponse(
             "index.html",
             {"request": request,
-             "error": "Letterboxd is not responding right now. Try again in a moment."},
+             "error": "Couldn't reach Letterboxd (network error or Cloudflare "
+                      f"block). Try again in a moment. [{type(e).__name__}]"},
             status_code=502,
         )
     return templates.TemplateResponse(

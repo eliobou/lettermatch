@@ -56,6 +56,13 @@ class Row:
             return None
         return abs(self.rating_a - self.rating_b)
 
+    @property
+    def combined(self) -> float | None:
+        """Mean of the two ratings, in half-star units; None if not comparable."""
+        if self.rating_a is None or self.rating_b is None:
+            return None
+        return (self.rating_a + self.rating_b) / 2
+
 
 @dataclass
 class Stats:
@@ -69,6 +76,14 @@ class Stats:
     avg_all_a: float | None      # A's mean rating over ALL A's rated films
     avg_all_b: float | None
     avg_gap: float | None        # mean |A - B| over `compared` films, in stars
+    affinity: float | None       # Pearson r of the two rating series (-1..1)
+
+    @property
+    def taste_match(self) -> int | None:
+        """Affinity mapped to a friendly 0-100% (r=0 -> 50%)."""
+        if self.affinity is None:
+            return None
+        return round((self.affinity + 1) / 2 * 100)
 
 
 @dataclass
@@ -91,6 +106,19 @@ def _mean_stars(values: list[int]) -> float | None:
     return round(sum(values) / len(values) / 2, 2) if values else None
 
 
+def _pearson(xs: list[int], ys: list[int]) -> float | None:
+    n = len(xs)
+    if n < 3:
+        return None
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx == 0 or syy == 0:      # one rater gave the same score to everything
+        return None
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    return round(sxy / (sxx ** 0.5 * syy ** 0.5), 3)
+
+
 def _build_stats(rows: list[Row], films_a: dict[str, int | None],
                  films_b: dict[str, int | None]) -> Stats:
     pairs = [(r.rating_a, r.rating_b) for r in rows
@@ -107,6 +135,7 @@ def _build_stats(rows: list[Row], films_a: dict[str, int | None],
         avg_all_b=_mean_stars([r for r in films_b.values() if r is not None]),
         avg_gap=(round(sum(abs(a - b) for a, b in pairs) / len(pairs) / 2, 2)
                  if pairs else None),
+        affinity=_pearson([a for a, _ in pairs], [b for _, b in pairs]),
     )
 
 

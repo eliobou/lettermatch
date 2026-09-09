@@ -36,10 +36,18 @@
   {% set st = c.stats %}
   {% if st.compared %}
   <div class="stats">
+    {% if st.taste_match is not none %}
+    <div class="affinity">
+      <div class="affinity-num">{{ st.taste_match }}<span class="pct">%</span></div>
+      <div class="affinity-lbl">taste match</div>
+      <div class="affinity-meter"><span style="width: {{ st.taste_match }}%"></span></div>
+    </div>
+    {% endif %}
+
     <div class="stat-avgs">
       <div class="stat">
         <span class="stat-num">{{ '%.2f'|format(st.avg_shared_a) }}</span>
-        <span class="stat-lbl">{{ c.user_a }} · avg on shared</span>
+        <span class="stat-lbl">{{ c.user_a }} · avg</span>
         <span class="stat-sub">all rated: {{ '%.2f'|format(st.avg_all_a) if st.avg_all_a is not none else '—' }}</span>
       </div>
       <div class="stat">
@@ -49,7 +57,7 @@
       </div>
       <div class="stat">
         <span class="stat-num">{{ '%.2f'|format(st.avg_shared_b) }}</span>
-        <span class="stat-lbl">{{ c.user_b }} · avg on shared</span>
+        <span class="stat-lbl">{{ c.user_b }} · avg</span>
         <span class="stat-sub">all rated: {{ '%.2f'|format(st.avg_all_b) if st.avg_all_b is not none else '—' }}</span>
       </div>
     </div>
@@ -69,6 +77,15 @@
   </div>
   {% endif %}
 
+  {% if c.rows %}
+  <div class="sortbar">
+    <span class="sortbar-lbl">Sort</span>
+    <button type="button" data-sort="title" class="active">A–Z</button>
+    <button type="button" data-sort="gap">Biggest gaps</button>
+    <button type="button" data-sort="combined">Highest rated</button>
+  </div>
+  {% endif %}
+
   <ol class="film-list">
     {% for row in c.rows %}
     {% if row.rating_a is not none and row.rating_b is not none %}
@@ -77,7 +94,10 @@
     {% else %}
       {% set tone_a = 'neutral' %}{% set tone_b = 'neutral' %}
     {% endif %}
-    <li class="film-row">
+    <li class="film-row"
+        data-title="{{ row.name | lower }}"
+        data-gap="{{ row.gap if row.gap is not none else -1 }}"
+        data-combined="{{ row.combined if row.combined is not none else -1 }}">
       <div class="col-film">
         <a class="poster" href="https://letterboxd.com/film/{{ row.slug }}/" target="_blank" rel="noopener">
           <img loading="lazy" src="/poster/{{ row.slug }}" alt="" width="70" height="105">
@@ -98,4 +118,42 @@
     <a href="/">← New comparison</a>
   </div>
 </section>
+
+<script>
+(function () {
+  var list = document.querySelector('.film-list');
+  var buttons = document.querySelectorAll('.sortbar button');
+  if (!list || !buttons.length) return;
+  var items = Array.prototype.slice.call(list.children);
+
+  function cmpTitle(a, b) { return a.dataset.title.localeCompare(b.dataset.title); }
+
+  function apply(mode) {
+    var sorted;
+    if (mode === 'title') {
+      sorted = items.slice().sort(cmpTitle);
+    } else {
+      sorted = items.slice().sort(function (a, b) {
+        var av = parseFloat(a.dataset[mode]), bv = parseFloat(b.dataset[mode]);
+        return bv - av || cmpTitle(a, b);   // desc, ties broken alphabetically
+      });
+    }
+    var frag = document.createDocumentFragment();
+    sorted.forEach(function (li) { frag.appendChild(li); });
+    list.appendChild(frag);
+    buttons.forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.sort === mode);
+    });
+    try { localStorage.setItem('lm_sort', mode); } catch (e) {}
+  }
+
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () { apply(btn.dataset.sort); });
+  });
+
+  var saved;
+  try { saved = localStorage.getItem('lm_sort'); } catch (e) {}
+  if (saved && saved !== 'title') apply(saved);
+})();
+</script>
 {% endblock %}

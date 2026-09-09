@@ -5,18 +5,13 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - lettermatch-data:/data
+      - ./data:/data
     environment:
       # Cache lifetime for a scraped profile, in seconds (default 24h).
       LETTERMATCH_USER_TTL: "86400"
       # Optional: set a TMDB v3 API key to use TMDB posters instead of the
       # Letterboxd image proxy. Leave empty to use Letterboxd.
-      TMDB_API_KEY: ""
-      # Set to "false" if you are behind a TLS-inspecting corporate proxy and the
-      # container can't validate letterboxd.com / TMDB certificates. Proper fix:
-      # mount the proxy's root CA and set SSL_CERT_FILE (see README).
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      # Set to "false" only if a TLS-inspecting proxy breaks outbound HTTPS.
       LETTERMATCH_SSL_VERIFY: "true"
     restart: unless-stopped
-
-volumes:
-  lettermatch-data:

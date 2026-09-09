@@ -4,3 +4,4 @@ __pycache__/
 data/
 scratchpad_out.txt
 .env
+.DS_Store

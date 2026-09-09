@@ -12,6 +12,8 @@ users have logged, side by side, with each user's star rating.
 - Results are cached, so repeat comparisons are instant
 - Dark, single-page UI; deploys as one container
 
+![Screenshot](/assets/screenshot.png)
+
 ## How it works
 
 Letterboxd has no open API, so LetterMatch reads the public `/{user}/films/`

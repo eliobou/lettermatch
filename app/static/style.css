@@ -172,7 +172,6 @@ footer {
   border-bottom: 1px solid var(--line);
 }
 .film-row:hover { background: var(--surface); }
-.film-row.disagree { box-shadow: inset 3px 0 0 var(--warn); }
 
 .col-film { display: flex; align-items: center; gap: 14px; min-width: 0; }
 
@@ -198,12 +197,23 @@ footer {
 
 .col-user { text-align: center; }
 
-.stars { display: inline-flex; gap: 1px; font-size: 15px; line-height: 1; }
+.stars {
+  display: inline-flex;
+  gap: 1px;
+  font-size: 15px;
+  line-height: 1;
+  --tone: var(--accent);
+}
+.stars.better  { --tone: #3ad06b; }
+.stars.worse   { --tone: #e5564e; }
+.stars.equal   { --tone: #e6b13c; }
+.stars.neutral { --tone: #9a9aa0; }
 .stars.none { color: #35353a; font-size: 18px; }
+
 .star { color: #35353a; }
-.star.full { color: var(--accent); }
+.star.full { color: var(--tone); }
 .star.half {
-  background: linear-gradient(90deg, var(--accent) 50%, #35353a 50%);
+  background: linear-gradient(90deg, var(--tone) 50%, #35353a 50%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

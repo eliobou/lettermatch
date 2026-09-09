@@ -1,12 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{{ c.user_a }} × {{ c.user_b }} · LetterMatch{% endblock %}
 
-{% macro starbar(rating) %}
+{% macro starbar(rating, tone) %}
   {% set s = rating | stars %}
   {% if s.text == '—' %}
     <span class="stars none" title="not rated">·</span>
   {% else %}
-  <span class="stars" title="{{ s.text }} / 5">
+  <span class="stars {{ tone }}" title="{{ s.text }} / 5">
     {% for _ in range(s.full) %}<span class="star full">★</span>{% endfor %}
     {% if s.half %}<span class="star half">★</span>{% endif %}
     {% for _ in range(s.empty) %}<span class="star">★</span>{% endfor %}
@@ -36,7 +35,13 @@
 
   <ol class="film-list">
     {% for row in c.rows %}
-    <li class="film-row{% if row.gap is not none and row.gap >= 3 %} disagree{% endif %}">
+    {% if row.rating_a is not none and row.rating_b is not none %}
+      {% set tone_a = 'better' if row.rating_a > row.rating_b else ('worse' if row.rating_a < row.rating_b else 'equal') %}
+      {% set tone_b = 'better' if row.rating_b > row.rating_a else ('worse' if row.rating_b < row.rating_a else 'equal') %}
+    {% else %}
+      {% set tone_a = 'neutral' %}{% set tone_b = 'neutral' %}
+    {% endif %}
+    <li class="film-row">
       <div class="col-film">
         <a class="poster" href="https://letterboxd.com/film/{{ row.slug }}/" target="_blank" rel="noopener">
           <img loading="lazy" src="/poster/{{ row.slug }}" alt="" width="70" height="105">
@@ -46,8 +51,8 @@
           {% if row.year %}<span class="film-year">{{ row.year }}</span>{% endif %}
         </div>
       </div>
-      <div class="col-user">{{ starbar(row.rating_a) }}</div>
-      <div class="col-user">{{ starbar(row.rating_b) }}</div>
+      <div class="col-user">{{ starbar(row.rating_a, tone_a) }}</div>
+      <div class="col-user">{{ starbar(row.rating_b, tone_b) }}</div>
     </li>
     {% endfor %}
   </ol>

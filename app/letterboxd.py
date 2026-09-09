@@ -119,10 +119,12 @@ def _last_page(html: str) -> int:
     return max(pages) if pages else 1
 
 
-async def scrape_user_films(username: str) -> list[ScrapedFilm]:
+async def scrape_user_films(username: str, tracker=None) -> list[ScrapedFilm]:
     """Return every film on the user's public profile.
 
     Raises ProfileNotFound (404) or LetterboxdBlocked (network / Cloudflare).
+    `tracker`, if given, gets `.set_pages(n)` once the page count is known and
+    `.page_done()` after each page is fetched.
     """
     username = username.strip().lower()
     async with _session() as session:
@@ -134,13 +136,19 @@ async def scrape_user_films(username: str) -> list[ScrapedFilm]:
 
         films = _parse_page(first.text)
         last = _last_page(first.text)
+        if tracker is not None:
+            tracker.set_pages(last)
+            tracker.page_done()
 
         if last > 1:
             async def fetch(page: int) -> list[ScrapedFilm]:
                 r = await _get(session, f"{BASE}/{username}/films/page/{page}/")
                 if r.status_code >= 400:
                     raise LetterboxdBlocked(f"HTTP {r.status_code} page {page}")
-                return _parse_page(r.text)
+                chunk = _parse_page(r.text)
+                if tracker is not None:
+                    tracker.page_done()
+                return chunk
 
             results = await asyncio.gather(*(fetch(p) for p in range(2, last + 1)))
             for chunk in results:

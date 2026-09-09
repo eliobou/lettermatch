@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="loading" data-a="{{ a }}" data-b="{{ b }}" data-refresh="{{ refresh }}">
+  <h1>Comparing two diaries…</h1>
+  <p class="muted-line" id="phase">Connecting to Letterboxd…</p>
+
+  <div class="progress indeterminate" id="progress">
+    <div class="progress-bar" id="bar"></div>
+  </div>
+  <p class="progress-count" id="count"></p>
+
+  <p class="fineprint">
+    Big profiles are fetched page by page (72 films per page). The result is
+    cached, so next time it's instant.
+  </p>
+
+  <p class="alert" id="err" hidden></p>
+  <p><a href="/">← Cancel</a></p>
+</section>
+
+<script>
+(function () {
+  var el = document.querySelector('.loading');
+  var a = el.dataset.a, b = el.dataset.b, refresh = el.dataset.refresh || '0';
+  var bar = document.getElementById('bar');
+  var progress = document.getElementById('progress');
+  var phase = document.getElementById('phase');
+  var count = document.getElementById('count');
+  var err = document.getElementById('err');
+  var q = new URLSearchParams({ a: a, b: b, refresh: refresh });
+  var gotAny = false;
+
+  if (!window.EventSource) {
+    window.location.replace('/compare?' + new URLSearchParams({ a: a, b: b, refresh: refresh, direct: 1 }));
+    return;
+  }
+
+  var src = new EventSource('/compare/events?' + q.toString());
+
+  src.addEventListener('progress', function (e) {
+    gotAny = true;
+    var d = JSON.parse(e.data);
+    phase.textContent = 'Fetching films…';
+    if (d.total > 0) {
+      var pct = Math.min(100, Math.round(d.done / d.total * 100));
+      progress.classList.remove('indeterminate');
+      bar.style.width = pct + '%';
+      count.textContent = 'Page ' + d.done + ' / ' + d.total;
+    }
+  });
+
+  src.addEventListener('done', function () {
+    src.close();
+    progress.classList.remove('indeterminate');
+    bar.style.width = '100%';
+    phase.textContent = 'Done — loading results…';
+    window.location.replace('/compare?' + new URLSearchParams({ a: a, b: b }));
+  });
+
+  src.addEventListener('error', function (e) {
+    if (e && e.data) {                     // error reported by the server
+      var msg = 'Something went wrong.';
+      try { msg = JSON.parse(e.data).message || msg; } catch (_) {}
+      src.close();
+      phase.textContent = 'Failed';
+      progress.hidden = true;
+      count.hidden = true;
+      err.textContent = msg;
+      err.hidden = false;
+    } else {                               // connection dropped / no SSE
+      src.close();
+      phase.textContent = 'Stream unavailable, switching to direct mode…';
+      window.location.replace('/compare?' + new URLSearchParams({ a: a, b: b, refresh: refresh, direct: 1 }));
+    }
+  });
+})();
+</script>
+{% endblock %}

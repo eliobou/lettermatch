@@ -14,6 +14,34 @@ from .letterboxd import scrape_user_films
 _log = logging.getLogger("lettermatch")
 
 
+class _Tracker:
+    """Aggregates scrape progress across both users for the SSE stream."""
+
+    def __init__(self, on_progress):
+        self._cb = on_progress
+        self.total = 0   # 0 until the first page of each scraped user is in
+        self.done = 0
+
+    def set_pages(self, n: int) -> None:
+        self.total += n
+        self._fire()
+
+    def page_done(self) -> None:
+        self.done += 1
+        self._fire()
+
+    def _fire(self) -> None:
+        try:
+            self._cb(self.done, self.total)
+        except Exception:  # a broken listener must never break the scrape
+            pass
+
+
+def is_fresh(username: str) -> bool:
+    meta = cache.get_user_sync(username.strip().lower())
+    return bool(meta and (time.time() - meta["synced_at"] < USER_TTL))
+
+
 @dataclass
 class Row:
     slug: str
@@ -82,7 +110,8 @@ def _build_stats(rows: list[Row], films_a: dict[str, int | None],
     )
 
 
-async def sync_user(username: str, force: bool = False) -> tuple[dict[str, int | None], float]:
+async def sync_user(username: str, force: bool = False,
+                    tracker=None) -> tuple[dict[str, int | None], float]:
     username = username.strip().lower()
     meta = cache.get_user_sync(username)
     fresh = meta and (time.time() - meta["synced_at"] < USER_TTL)
@@ -95,7 +124,7 @@ async def sync_user(username: str, force: bool = False) -> tuple[dict[str, int |
 
     reason = "forced refresh" if force else ("stale" if meta else "never synced")
     t0 = time.time()
-    scraped = await scrape_user_films(username)
+    scraped = await scrape_user_films(username, tracker=tracker)
     films = {f.slug: f.rating for f in scraped}
     cache.replace_user_films(username, films)
     for f in scraped:
@@ -105,15 +134,18 @@ async def sync_user(username: str, force: bool = False) -> tuple[dict[str, int |
     return films, time.time()
 
 
-async def compare(user_a: str, user_b: str, force: bool = False) -> Comparison:
+async def compare(user_a: str, user_b: str, force: bool = False,
+                  on_progress=None) -> Comparison:
     user_a, user_b = user_a.strip().lower(), user_b.strip().lower()
     _log.info("compare a=%s b=%s force=%s", user_a, user_b, force)
     t0 = time.time()
 
+    tracker = _Tracker(on_progress) if on_progress else None
+
     # Both users are synced concurrently; the process-wide request gate in
     # letterboxd.py keeps the total rate the same as doing them one after another.
     (films_a, synced_a), (films_b, synced_b) = await asyncio.gather(
-        sync_user(user_a, force), sync_user(user_b, force)
+        sync_user(user_a, force, tracker), sync_user(user_b, force, tracker)
     )
 
     shared_slugs = sorted(set(films_a) & set(films_b))

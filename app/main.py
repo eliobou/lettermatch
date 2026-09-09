@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import time
 from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    HTMLResponse, RedirectResponse, Response, StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import cache, logs, tmdb
 from .config import TMDB_API_KEY
 from .letterboxd import LetterboxdBlocked, ProfileNotFound, resolve_poster_url
-from .service import compare
+from .service import compare, is_fresh
 
 _log = logging.getLogger("lettermatch")
 BASE_DIR = Path(__file__).parent
@@ -72,33 +76,98 @@ def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+def _err_page(request: Request, e: Exception):
+    if isinstance(e, ProfileNotFound):
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error": f"Letterboxd profile not found: “{e}”"},
+            status_code=404,
+        )
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request,
+         "error": "Couldn't reach Letterboxd (network error or Cloudflare block). "
+                  f"Try again in a moment. [{type(e).__name__}]"},
+        status_code=502,
+    )
+
+
 @app.get("/compare", response_class=HTMLResponse)
 async def compare_view(
     request: Request,
     a: str = Query(..., min_length=1, max_length=40),
     b: str = Query(..., min_length=1, max_length=40),
     refresh: int = Query(0),
+    direct: int = Query(0),
 ):
+    cached = is_fresh(a) and is_fresh(b) and not refresh
+
+    # Slow path: nothing usable in cache -> show the progress page, which streams
+    # /compare/events and reloads here (warm) when done. `direct=1` forces the
+    # old blocking behaviour (fallback if EventSource fails).
+    if not cached and not direct:
+        return templates.TemplateResponse(
+            "loading.html",
+            {"request": request, "a": a.strip().lower(), "b": b.strip().lower(),
+             "refresh": refresh},
+        )
+
     try:
         result = await compare(a, b, force=bool(refresh))
-    except ProfileNotFound as e:
-        _log.warning("compare a=%s b=%s: profile not found (%s)", a, b, e)
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error": f"Letterboxd profile not found: “{e}”"},
-            status_code=404,
-        )
-    except (httpx.HTTPError, LetterboxdBlocked) as e:
+    except (ProfileNotFound, httpx.HTTPError, LetterboxdBlocked) as e:
         _log.warning("compare a=%s b=%s: failed (%s: %s)", a, b, type(e).__name__, e)
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request,
-             "error": "Couldn't reach Letterboxd (network error or Cloudflare "
-                      f"block). Try again in a moment. [{type(e).__name__}]"},
-            status_code=502,
-        )
+        return _err_page(request, e)
     return templates.TemplateResponse(
         "compare.html", {"request": request, "c": result}
+    )
+
+
+@app.get("/compare/events")
+async def compare_events(
+    a: str = Query(..., min_length=1, max_length=40),
+    b: str = Query(..., min_length=1, max_length=40),
+    refresh: int = Query(0),
+):
+    """SSE stream: progress events while scraping, then `done` or `error`."""
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def on_progress(done: int, total: int) -> None:
+        queue.put_nowait(("progress", {"done": done, "total": total}))
+
+    async def worker() -> None:
+        try:
+            await compare(a, b, force=bool(refresh), on_progress=on_progress)
+            queue.put_nowait(("done", {}))
+        except ProfileNotFound as e:
+            queue.put_nowait(("error", {"message": f"Profil Letterboxd introuvable : « {e} »"}))
+        except (httpx.HTTPError, LetterboxdBlocked) as e:
+            _log.warning("events a=%s b=%s: %s: %s", a, b, type(e).__name__, e)
+            queue.put_nowait(("error", {"message": "Letterboxd injoignable (erreur réseau ou blocage Cloudflare)."}))
+        except Exception:  # noqa: BLE001
+            _log.exception("events a=%s b=%s: unexpected", a, b)
+            queue.put_nowait(("error", {"message": "Erreur interne."}))
+
+    async def stream():
+        yield ": connected\n\n"
+        task = asyncio.create_task(worker())
+        try:
+            while True:
+                try:
+                    kind, data = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+                if kind in ("done", "error"):
+                    return
+        finally:
+            task.cancel()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                 "Connection": "keep-alive"},
     )
 
 

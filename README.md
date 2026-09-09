@@ -6,7 +6,8 @@ with the star rating each of them gave it.
 
 - Dark, minimal UI (FastAPI + Jinja, one container)
 - SQLite cache of scraped profiles — first comparison is slow, the rest are instant
-- Films rated very differently by the two users (≥ 1.5 stars apart) are flagged
+- Uncached comparisons show a live progress bar (SSE, "page N / M")
+- Stats panel: each user's average, biggest gaps, who rated higher / lower / equal
 
 ## Is it free?
 
@@ -73,6 +74,14 @@ through one shared gate, so raising/lowering `PAGE_CONCURRENCY` is the only knob
 that changes the actual rate Letterboxd sees.
 
 Use `?refresh=1` on a comparison URL (or the "Force refresh" link) to bypass the cache.
+
+## Reverse proxy note (SSE)
+
+The progress bar uses Server-Sent Events on `/compare/events`. The response
+already sends `X-Accel-Buffering: no`, which Nginx / Nginx Proxy Manager respects.
+If the bar never moves and jumps straight to the result, add `proxy_buffering off;`
+to that proxy host's advanced config. If SSE is blocked entirely, the page falls
+back to a plain blocking request automatically.
 
 ## Corporate proxy / TLS inspection
 
